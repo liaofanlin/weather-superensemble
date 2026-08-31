@@ -2,7 +2,13 @@
 """
 plot_hrrr_precip.py
 
-Clean HRRR precipitation plot with ONLY selected major Denver highways.
+Plot regridded HRRR 1-hour precipitation on the 51 x 51 Denver grid.
+
+Important plotting choices:
+  * The precipitation field is rendered as a true raster with imshow().
+  * interpolation="nearest" preserves the visible 51 x 51 grid cells.
+  * The map panel is explicitly square.
+  * Only selected major Denver highways are overlaid.
 
 Road source:
     U.S. Census TIGERweb Transportation service
@@ -16,9 +22,6 @@ Only these routes are retained:
     US-6
     US-36
     US-285
-
-All retained roads are black and each route is labeled once.
-No local roads, no state highways, no business routes, no express-lane labels.
 
 No geopandas/osmnx required.
 """
@@ -39,13 +42,11 @@ TIGER_BASE = (
     "TIGERweb/Transportation/MapServer"
 )
 
-# Query both layers, then FILTER strictly by route name.
 ROAD_LAYERS = [
     (2, "primary"),
     (6, "secondary"),
 ]
 
-# Exact routes we want on the map.
 ALLOWED_ROUTES = {
     "I-25",
     "I-70",
@@ -77,7 +78,6 @@ def normalize_route_name(name):
     s = str(name).upper().strip()
     s = re.sub(r"\s+", " ", s)
 
-    # Reject variants we do not want.
     reject_words = [
         "BUS",
         "BUSINESS",
@@ -89,26 +89,27 @@ def normalize_route_name(name):
         "LOOP",
         "CONNECTOR",
     ]
+
     if any(word in s for word in reject_words):
         return None
 
-    # Interstate
     m = re.search(r"(?:INTERSTATE|I)[\s\-]*([0-9]{1,3})\b", s)
+
     if m:
         route = f"I-{int(m.group(1))}"
         return route if route in ALLOWED_ROUTES else None
 
-    # U.S. Highway
     s2 = (
         s.replace("U.S.", "US")
-         .replace("U.S", "US")
-         .replace("UNITED STATES", "US")
+        .replace("U.S", "US")
+        .replace("UNITED STATES", "US")
     )
 
     m = re.search(
         r"\bUS(?: HWY| HIGHWAY)?[\s\-]*([0-9]{1,3})\b",
         s2,
     )
+
     if m:
         route = f"US-{int(m.group(1))}"
         return route if route in ALLOWED_ROUTES else None
@@ -138,13 +139,14 @@ def query_tiger_layer(layer_id, bbox):
         timeout=60,
         headers={"User-Agent": "HRRR-Denver-major-highways/1.0"},
     )
+
     r.raise_for_status()
     return r.json()
 
 
 def fetch_major_highways(bbox):
     """
-    Download TIGERweb geometry and retain ONLY the allow-listed routes.
+    Download TIGERweb geometry and retain only the allow-listed routes.
     """
     roads = []
 
@@ -163,8 +165,8 @@ def fetch_major_highways(bbox):
             props = feature.get("properties") or {}
             geom = feature.get("geometry") or {}
 
-            # Try NAME first, then BASENAME.
             route = normalize_route_name(props.get("NAME"))
+
             if route is None:
                 route = normalize_route_name(props.get("BASENAME"))
 
@@ -199,7 +201,6 @@ def fetch_major_highways(bbox):
 
         print(f"  {layer_name:9s}: retained {kept} pieces")
 
-    # Remove exact duplicate geometries that can occur between layers.
     unique = []
     seen = set()
 
@@ -229,7 +230,6 @@ def fetch_major_highways(bbox):
         unique.append(road)
 
     roads = unique
-
     routes = sorted({r["route"] for r in roads})
 
     print(f"Highway pieces loaded : {len(roads)}")
@@ -245,7 +245,6 @@ def draw_highways(ax, roads, transform=None):
     if not roads:
         return
 
-    # Draw only black highway centerlines.
     for road in roads:
         kwargs = {
             "color": "black",
@@ -265,7 +264,6 @@ def draw_highways(ax, roads, transform=None):
             **kwargs,
         )
 
-    # One label per route: use longest retained piece.
     representative = {}
 
     for road in roads:
@@ -288,6 +286,26 @@ def draw_highways(ax, roads, transform=None):
         _, road = representative[route]
 
         mid = len(road["lons"]) // 2
+        x = float(road["lons"][mid])
+        y = float(road["lats"][mid])
+
+        # Keep labels inside the plotting panel, especially routes such as
+        # US-285 and I-25 whose representative segment may extend beyond
+        # the visible domain.
+        try:
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+
+            xmin, xmax = sorted((x0, x1))
+            ymin, ymax = sorted((y0, y1))
+
+            xpad = 0.025 * (xmax - xmin)
+            ypad = 0.025 * (ymax - ymin)
+
+            x = np.clip(x, xmin + xpad, xmax - xpad)
+            y = np.clip(y, ymin + ypad, ymax - ypad)
+        except Exception:
+            pass
 
         kwargs = {
             "fontsize": 8,
@@ -296,6 +314,7 @@ def draw_highways(ax, roads, transform=None):
             "ha": "center",
             "va": "center",
             "zorder": 22,
+            "clip_on": True,
             "bbox": {
                 "boxstyle": "round,pad=0.12",
                 "facecolor": "white",
@@ -308,8 +327,8 @@ def draw_highways(ax, roads, transform=None):
             kwargs["transform"] = transform
 
         ax.text(
-            road["lons"][mid],
-            road["lats"][mid],
+            x,
+            y,
             route,
             **kwargs,
         )
@@ -325,32 +344,63 @@ def format_time(value):
     return np.datetime_as_string(value, unit="m")
 
 
+def grid_cell_extent(coords):
+    """
+    Return image edges so the first/last data values are cell centers.
+
+    For a regular 1-D grid this extends the domain by half a grid spacing
+    on each side, which is appropriate for a raster representation.
+    """
+    coords = np.asarray(coords, dtype=float)
+
+    if coords.size == 1:
+        return coords[0] - 0.5, coords[0] + 0.5
+
+    spacing = np.median(np.diff(coords))
+
+    return (
+        float(coords[0] - 0.5 * spacing),
+        float(coords[-1] + 0.5 * spacing),
+    )
+
+
 def plot_one(ds, fhr, output_file, roads):
     field = ds["precip_1h_mm"].sel(forecast_hour=fhr)
 
-    lats = ds["latitude"].values
-    lons = ds["longitude"].values
-    values = field.values
+    lats = np.asarray(ds["latitude"].values)
+    lons = np.asarray(ds["longitude"].values)
+    values = np.asarray(field.values)
 
-    lon2d, lat2d = np.meshgrid(lons, lats)
+    if values.shape != (len(lats), len(lons)):
+        raise ValueError(
+            f"Unexpected precipitation shape {values.shape}; "
+            f"expected ({len(lats)}, {len(lons)})"
+        )
 
-    # Precipitation thresholds converted exactly from inches to millimeters.
-    # Original inch thresholds:
-    # 0.002, 0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 1.00, 2.00 in
+    # Ensure increasing coordinate order for imshow.
+    if lats[0] > lats[-1]:
+        lats = lats[::-1]
+        values = values[::-1, :]
+
+    if lons[0] > lons[-1]:
+        lons = lons[::-1]
+        values = values[:, ::-1]
+
+    lon_left, lon_right = grid_cell_extent(lons)
+    lat_bottom, lat_top = grid_cell_extent(lats)
+
     levels = np.array([
-        0.0508,   # 0.002 in
-        0.2540,   # 0.01 in
-        1.2700,   # 0.05 in
-        2.5400,   # 0.10 in
-        6.3500,   # 0.25 in
-        12.7000,  # 0.50 in
-        19.0500,  # 0.75 in
-        25.4000,  # 1.00 in
-        50.8000,  # 2.00 in
+        0.0508,
+        0.2540,
+        1.2700,
+        2.5400,
+        6.3500,
+        12.7000,
+        19.0500,
+        25.4000,
+        50.8000,
     ])
 
-    # Match the supplied precipitation color bar:
-    # gray -> cyan -> green -> lime -> yellow -> amber -> orange -> red-orange
     precip_colors = [
         "#808080",
         "#00DCE6",
@@ -395,19 +445,34 @@ def plot_one(ds, fhr, output_file, roads):
         import cartopy.crs as ccrs
         import cartopy.feature as cfeature
 
-        fig = plt.figure(figsize=(9, 7))
-        ax = plt.axes(projection=ccrs.PlateCarree())
+        # Square figure, with an explicitly square map axes.
+        fig = plt.figure(figsize=(9, 9))
 
-        pcm = ax.contourf(
-            lon2d,
-            lat2d,
+        # [left, bottom, width, height] -- width == height => square panel.
+        ax = fig.add_axes(
+            [0.10, 0.12, 0.72, 0.72],
+            projection=ccrs.PlateCarree(),
+        )
+
+        # TRUE RASTER:
+        # Each of the 51 x 51 values is drawn as one rectangular image cell.
+        # interpolation="nearest" prevents smoothing/interpolation.
+        pcm = ax.imshow(
             values,
-            levels=levels,
+            origin="lower",
+            extent=[
+                lon_left,
+                lon_right,
+                lat_bottom,
+                lat_top,
+            ],
             cmap=precip_cmap,
             norm=precip_norm,
-            extend="both",
+            interpolation="nearest",
+            resample=False,
             transform=ccrs.PlateCarree(),
             zorder=1,
+            aspect="auto",
         )
 
         ax.add_feature(
@@ -418,13 +483,18 @@ def plot_one(ds, fhr, output_file, roads):
 
         ax.set_extent(
             [
-                float(lons.min()),
-                float(lons.max()),
-                float(lats.min()),
-                float(lats.max()),
+                lon_left,
+                lon_right,
+                lat_bottom,
+                lat_top,
             ],
             crs=ccrs.PlateCarree(),
         )
+
+        # Prevent Cartopy from reshaping the axes according to geographic
+        # aspect ratio; we want the 51 x 51 model grid displayed as a square.
+        ax.set_aspect("auto")
+        ax.set_box_aspect(1)
 
         draw_highways(
             ax,
@@ -441,36 +511,46 @@ def plot_one(ds, fhr, output_file, roads):
         gl.top_labels = False
         gl.right_labels = False
 
+        # Separate colorbar axes so adding the colorbar cannot resize
+        # the square map panel.
+        cax = fig.add_axes([0.85, 0.12, 0.035, 0.72])
+
         cbar = fig.colorbar(
             pcm,
-            ax=ax,
-            pad=0.03,
+            cax=cax,
+            extend="both",
         )
 
     except ImportError:
-        fig, ax = plt.subplots(figsize=(9, 7))
+        fig = plt.figure(figsize=(9, 9))
 
-        pcm = ax.contourf(
-            lon2d,
-            lat2d,
+        ax = fig.add_axes(
+            [0.10, 0.12, 0.72, 0.72]
+        )
+
+        pcm = ax.imshow(
             values,
-            levels=levels,
+            origin="lower",
+            extent=[
+                lon_left,
+                lon_right,
+                lat_bottom,
+                lat_top,
+            ],
             cmap=precip_cmap,
             norm=precip_norm,
-            extend="both",
+            interpolation="nearest",
+            resample=False,
             zorder=1,
+            aspect="auto",
         )
 
         draw_highways(ax, roads)
 
-        ax.set_xlim(
-            float(lons.min()),
-            float(lons.max()),
-        )
-        ax.set_ylim(
-            float(lats.min()),
-            float(lats.max()),
-        )
+        ax.set_xlim(lon_left, lon_right)
+        ax.set_ylim(lat_bottom, lat_top)
+
+        ax.set_box_aspect(1)
 
         ax.set_xlabel("Longitude")
         ax.set_ylabel("Latitude")
@@ -482,10 +562,12 @@ def plot_one(ds, fhr, output_file, roads):
             zorder=2,
         )
 
+        cax = fig.add_axes([0.85, 0.12, 0.035, 0.72])
+
         cbar = fig.colorbar(
             pcm,
-            ax=ax,
-            pad=0.02,
+            cax=cax,
+            extend="both",
         )
 
     cbar.set_ticks(levels)
@@ -501,15 +583,19 @@ def plot_one(ds, fhr, output_file, roads):
         "50.8",
     ])
     cbar.set_label("1-h precipitation (mm)")
-    ax.set_title(title)
+
+    ax.set_title(
+        title,
+        pad=10,
+    )
 
     output_file.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    fig.tight_layout()
-
+    # Do not use tight_layout() or bbox_inches="tight" here:
+    # the axes positions are intentional and keep the map panel square.
     fig.savefig(
         output_file,
         dpi=150,
@@ -579,6 +665,9 @@ def main():
             f"{lons.min():.4f}-{lons.max():.4f} E"
         )
 
+        print("Rendering    : raster (imshow, nearest-neighbor)")
+        print("Map panel    : square")
+
         print(
             "Highways     : "
             + (
@@ -597,7 +686,6 @@ def main():
         print()
 
         for fhr in ds["forecast_hour"].values.astype(int):
-
             output_file = (
                 output_dir
                 / f"hrrr_precip_1h_f{fhr:02d}.png"
