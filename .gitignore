@@ -1,0 +1,23 @@
+# HRRR downloaded data
+data/
+
+# Generated figures
+figures/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# GRIB / NetCDF
+*.grib2
+*.grb2
+*.nc
+*.idx
+
+# macOS
+.DS_Store
+
+# IDE
+.spyproject/
+.vscode/
