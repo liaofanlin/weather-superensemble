@@ -31,8 +31,8 @@ import requests
 # USER SETTINGS
 # ============================================================
 
-DENVER_LAT = 39.7392
-DENVER_LON = -104.9903
+BOULDER_LAT = 40.0150
+BOULDER_LON = -105.2705
 
 DOMAIN_SIZE_DEG = 0.5
 TARGET_RESOLUTION_DEG = 0.01
@@ -149,10 +149,10 @@ def main():
     date, cycle = resolve_cycle(args.date, args.cycle)
 
     half = DOMAIN_SIZE_DEG / 2.0
-    lat_min = DENVER_LAT - half
-    lat_max = DENVER_LAT + half
-    lon_min = DENVER_LON - half
-    lon_max = DENVER_LON + half
+    lat_min = BOULDER_LAT - half
+    lat_max = BOULDER_LAT + half
+    lon_min = BOULDER_LON - half
+    lon_max = BOULDER_LON + half
 
     cycle_tag = f"{date}_{cycle:02d}z"
 
@@ -179,7 +179,7 @@ def main():
         f"+{last_valid_minute:03d} min"
     )
     print(f"Output cadence    : 15 minutes ({n_times} times)")
-    print(f"Denver center     : {DENVER_LAT:.4f}, {DENVER_LON:.4f}")
+    print(f"Boulder center    : {BOULDER_LAT:.4f}, {BOULDER_LON:.4f}")
     print(f"Domain size       : {DOMAIN_SIZE_DEG:.2f} x {DOMAIN_SIZE_DEG:.2f} degree")
     print(f"Latitude          : {lat_min:.4f} to {lat_max:.4f}")
     print(f"Longitude         : {lon_min:.4f} to {lon_max:.4f}")
