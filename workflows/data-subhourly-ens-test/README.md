@@ -1,4 +1,4 @@
-# data-subhourly-ens
+# data-subhourly-ens-test
 
 Four-member time-lagged HRRR subhourly ensemble over Boulder.
 
