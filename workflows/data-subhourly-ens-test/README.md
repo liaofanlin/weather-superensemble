@@ -29,7 +29,7 @@ The final valid time is base +03:00. Therefore, the oldest member needs a
 
 ## Files
 
-- `run_hrrr_subhourly_ens_workflow_test.py`
+- `run_hrrr_subhourly_ens_test_workflow.py`
 - `fetch_hrrr_subhourly_ens_test.py`
 - `regrid_hrrr_subhourly_ens_test.py`
 - `plot_hrrr_subhourly_ens_test.py`
