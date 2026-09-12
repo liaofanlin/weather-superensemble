@@ -29,23 +29,23 @@ The final valid time is base +03:00. Therefore, the oldest member needs a
 
 ## Files
 
-- `run_hrrr_subhourly_ens_workflow.py`
-- `fetch_hrrr_subhourly_ens.py`
-- `regrid_hrrr_subhourly_ens.py`
-- `plot_hrrr_subhourly_ens.py`
+- `run_hrrr_subhourly_ens_workflow_test.py`
+- `fetch_hrrr_subhourly_ens_test.py`
+- `regrid_hrrr_subhourly_ens_test.py`
+- `plot_hrrr_subhourly_ens_test.py`
 
 ## Run
 
 Default example:
 
 ```bash
-python run_hrrr_subhourly_ens_workflow.py
+python run_hrrr_subhourly_ens_test_workflow.py
 ```
 
 Or:
 
 ```bash
-python run_hrrr_subhourly_ens_workflow.py --date 20260826 --cycle 23
+python run_hrrr_subhourly_ens_test_workflow.py --date 20260826 --cycle 23
 ```
 
 Example figure names:
